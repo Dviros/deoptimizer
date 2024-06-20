@@ -24,6 +24,7 @@ bitflags! {
         const LogicalPartitioning = 1 << 2;
         const OffsetMutation = 1 << 3;
         const RegisterSwap = 1 << 4;
+        const ControlFlowFlattening = 1 << 5;
         const All = u8::MAX;
     }
 }
@@ -71,6 +72,9 @@ impl ArmDeoptimizer {
         }
         if self.transforms.contains(AvailableTransforms::RegisterSwap) {
             ArmTransform::register_swap(instructions);
+        }
+        if self.transforms.contains(AvailableTransforms::ControlFlowFlattening) {
+            ArmTransform::control_flow_flattening(instructions);
         }
         Ok(())
     }

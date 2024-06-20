@@ -9,6 +9,29 @@ mod options;
 mod utils;
 mod x86_64;
 mod arm;
+mod plugin;
+mod visualization;
+mod reporting;
+mod example_plugins;
+
+use plugin::{PluginManager, TransformationPlugin};
+use visualization::VisualizationTool;
+use reporting::ReportingModule;
+
+struct ExampleTransformationPlugin;
+
+impl TransformationPlugin for ExampleTransformationPlugin {
+    fn name(&self) -> &str {
+        "Example Transformation"
+    }
+
+    fn transform(&self, instructions: &mut Vec<u8>) {
+        // Example transformation: Increment each byte
+        for i in 0..instructions.len() {
+            instructions[i] = instructions[i].wrapping_add(1);
+        }
+    }
+}
 
 // const TIMEOUT: u64 = 30;
 static LOGGER: utils::Logger = utils::Logger;
@@ -79,7 +102,20 @@ fn main() {
 
     let mut input = file.clone();
     let mut output = Vec::new();
-    for _ in 0..opts.cycle {
+
+    // Initialize the plugin manager and load example plugins
+    let mut plugin_manager = PluginManager::new();
+    plugin_manager.load_transformation_plugin(Box::new(ExampleTransformationPlugin));
+    example_plugins::load_example_plugins(&mut plugin_manager);
+
+    // Initialize the visualization tool
+    let visualization_tool = VisualizationTool::new();
+
+    // Initialize the reporting module
+    let reporting_module = ReportingModule::new();
+    let mut applied_transformations = Vec::new();
+
+    for cycle in 0..opts.cycle {
         info!("Analyzing input binary...");
         if let Err(e) = deopt.analyze(&input) {
             error!("{}", e);
@@ -90,6 +126,9 @@ fn main() {
             error!("{}", e);
             return;
         }
+        // Apply plugins
+        plugin_manager.apply_transformations(&mut input);
+        applied_transformations.push("Example Transformation".to_string());
         info!("Encoding transformed instructions...");
         output = match deopt.encode(&input) {
             Ok(b) => b,
@@ -98,6 +137,19 @@ fn main() {
                 return;
             }
         };
+
+        // Visualize the transformed instructions
+        let visualization_filename = format!("{}_cycle_{}.txt", opts.outfile, cycle);
+        if let Err(e) = visualization_tool.visualize(&output, &visualization_filename) {
+            error!("Failed to generate visualization: {}", e);
+        }
+        
+        // Generate report of applied transformations
+        let report_filename = format!("{}_report_{}.txt", opts.outfile, cycle);
+        if let Err(e) = reporting_module.generate_report(&applied_transformations, &input, &output, &report_filename) {
+            error!("Failed to generate report: {}", e);
+        }
+
         input = output.clone();
     }
 
@@ -132,7 +184,7 @@ fn main() {
 }
 
 fn print_banner() {
-    let banner_b64 = b"ICBfX19fXyAgICAgICAgICAgICAgIF9fX18gICAgICAgIF8gICAgICAgICAgICAgICAgICAgICAgICAgICAgCiB8ICBfXyBcICAgICAgICAgICAgIC8gX18gXCAgICAgIHwgfCAo4piiKSAgICAgICAgICjimKIpICAgICAgICAgICAgIAogfCB8ICB8IHwgX19fIF9fX19fX3wgfCAgfCB8XyBfXyB8IHxfIF8gXyBfXyBfX18gIF8gX19fX19fXyBfIF9fIAogfCB8ICB8IHwvIF8gXF9fX19fX3wgfCAgfCB8ICdfIFx8IF9ffCB8ICdfIGAgXyBcfCB8XyAgLyBfIFwgJ19ffAogfCB8X198IHwgIF9fLyAgICAgIHwgfF9ffCB8IHxfKSB8IHxffCB8IHwgfCB8IHwgfCB8LyAvICBfXy8gfCAgIAogfF9fX19fLyBcX19ffCAgICAgICBcX19fXy98IC5fXy8gXF9ffF98X3wgfF98IHxffF8vX19fXF9fX3xffCAgIAo9PT09PT09PT09PT09PT09PT09PT09PT09PT18X3wgKOODjiDjgpzQlOOCnCnjg44g77i1IMK/cMedeuG0icmv4bSJyodkbyBvcyDKjsmlyo0KICAgICAgICAgRGUtT3B0aW1pemVyIOKYoyBDb3B5cmlnaHQgKGMpIDIwMjQgRUdFIEJBTENJIA==";
+    let banner_b64 = b"ICBfX19fXyAgICAgICAgICAgICAgIF9fX18gICAgICAgIF8gICAgICAgICAgICAgICAgICAgICAgICAgICAgCiB8ICBfXyBcICAgICAgICAgICAgIC8gX18gXCAgICAgIHwgfCAo4piiKSAgICAgICAgICjimKIpICAgICAgICAgICAgIAogfCB8ICB8IHwgX19fIF9fX19fX3wgfCAgfCB8XyBfXyB8IHxfIF8gXyBfXyBfX18gIF8gX19fX19fXyBfIF9fIAogfCB8ICB8IHwvIF8gXF9fX19fX3wgfCAgfCB8ICdfIFx8IF9ffCB8ICdfIGAgXyBcfCB8XyAgLyBfIFwgJ19ffAogfCB8X198IHwgIF9fLyAgICAgIHwgfF9ffCB8IHxfKSB8IHxffCB8IHwgfCB8IHwgfCB8LyAvICBfXy8gfCAgIAogfF9fX19fLyBcX19ffCAgICAgICBcX19fXy98IC5fXy...
 
     println!(
         "{}",
