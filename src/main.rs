@@ -1,3 +1,4 @@
+
 use base64::prelude::*;
 use colored::Colorize;
 use log::{error, info, warn, LevelFilter};
@@ -7,6 +8,7 @@ use std::io::Write;
 mod options;
 mod utils;
 mod x86_64;
+mod arm;
 
 // const TIMEOUT: u64 = 30;
 static LOGGER: utils::Logger = utils::Logger;
@@ -25,14 +27,14 @@ fn main() {
     print_banner();
     options::print_summary(&opts);
 
-    if opts.arch.to_lowercase() != "x86" {
-        error!("Currently only x86 architecture is supported.");
+    if opts.arch.to_lowercase() != "x86" && opts.arch.to_lowercase() != "arm" {
+        error!("Currently only x86 and ARM architectures are supported.");
         return;
     }
 
     if opts.freq > 0.8 || opts.cycle > 2 {
         warn!("Deoptimization parameters are too aggressive!");
-        warn!("The output size will drasstically increase.")
+        warn!("The output size will drastically increase.")
     }
 
     let file = match utils::read_file(opts.file.clone()) {
@@ -51,7 +53,11 @@ fn main() {
     };
 
     info!("Input file size: {}", file.len());
-    let mut deopt = x86_64::Deoptimizer::new();
+    let mut deopt = match opts.arch.to_lowercase().as_str() {
+        "x86" => x86_64::Deoptimizer::new(),
+        "arm" => arm::Deoptimizer::new(),
+        _ => return,
+    };
     deopt.freq = opts.freq;
     deopt.allow_invalid = opts.allow_invalid;
     deopt.set_skipped_offsets(opts.skip_offsets);
@@ -75,15 +81,17 @@ fn main() {
     let mut output = Vec::new();
     for _ in 0..opts.cycle {
         info!("Analyzing input binary...");
-        let acode = match deopt.analyze(&input, opts.bitness, start_addr) {
-            Ok(ac) => ac,
-            Err(e) => {
-                error!("{}", e);
-                return;
-            }
-        };
-        info!("Deoptimizing...");
-        output = match deopt.deoptimize(&acode) {
+        if let Err(e) = deopt.analyze(&input) {
+            error!("{}", e);
+            return;
+        }
+        info!("Transforming instructions...");
+        if let Err(e) = deopt.transform(&mut input) {
+            error!("{}", e);
+            return;
+        }
+        info!("Encoding transformed instructions...");
+        output = match deopt.encode(&input) {
             Ok(b) => b,
             Err(e) => {
                 error!("{}", e);
